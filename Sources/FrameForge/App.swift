@@ -5,7 +5,7 @@ import AVKit
     @StateObject private var store = Store()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "editor") {
             Editor().environmentObject(store).onAppear { delegate.store = store }.frame(minWidth: 1080, minHeight: 720).preferredColorScheme(.dark)
         }.commands {
             CommandGroup(replacing: .newItem) {
@@ -18,15 +18,44 @@ import AVKit
                 Button("Redo", action: { store.redo() }).keyboardShortcut("z", modifiers: [.command,.shift]).disabled(!store.canRedo)
             }
             CommandMenu("Recording") {
-                Button(store.recording ? "Stop Recording" : "Start Recording") { Task { if store.recording { await store.stopRecording() } else { await store.startRecording() } } }.keyboardShortcut("r", modifiers: [.option,.shift]).disabled(store.busy)
+                Button(store.recording ? "Stop Recording" : "Record Screen or Region…") { Task { await store.toggleQuickCapture() } }.keyboardShortcut("r", modifiers: [.option,.shift]).disabled(store.busy)
             }
         }
-        MenuBarExtra(store.recording ? timeLabel(store.recordingSeconds) : "FrameForge", systemImage:store.recording ? "record.circle.fill" : "record.circle") {
-            Text(store.recording ? "Recording · \(timeLabel(store.recordingSeconds))" : "FrameForge ready")
-            Button(store.recording ? "Stop Recording" : "Start Recording") {
-                Task { if store.recording { await store.stopRecording() } else { await store.startRecording() } }
-            }.disabled(store.busy)
+        MenuBarExtra {
+            MenuBarContent().environmentObject(store)
+        } label: {
+            if store.recording { Label(timeLabel(store.recordingSeconds), systemImage: "record.circle.fill").labelStyle(.titleAndIcon) }
+            else { Image(systemName: store.error == nil ? "square.stack.3d.up.fill" : "exclamationmark.triangle.fill") }
         }
+    }
+}
+struct MenuBarContent: View {
+    @EnvironmentObject var store: Store
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Text(store.recording ? "Recording · \(timeLabel(store.recordingSeconds))" : store.status)
+        Divider()
+        Button(store.recording ? "Stop Recording" : "Record Screen or Region…") { Task { await store.toggleQuickCapture() } }
+            .keyboardShortcut("r", modifiers: [.option,.shift]).disabled(store.busy)
+        Toggle("Copy Recording to Clipboard", isOn: $store.copyRecordingToClipboard).disabled(store.recording)
+        Divider()
+        Picker("Microphone", selection: $store.microphoneID) {
+            Text("Off").tag("off"); Text("System Default Input").tag("default")
+            ForEach(store.microphones) { device in Text(device.name).tag(device.id) }
+        }.disabled(store.recording)
+        // Menus can't hold sliders; 10% steps. Applies live, including mid-recording.
+        Picker("Mic Volume · \(Int((store.microphoneGain*100).rounded()))%", selection: Binding(get: { Int((store.microphoneGain*10).rounded())*10 }, set: { store.setMicrophoneGain(Double($0)/100) })) {
+            ForEach(Array(stride(from: 100, through: 10, by: -10)), id: \.self) { percent in Text("\(percent)%").tag(percent) }
+        }.disabled(store.microphoneID == "off")
+        Toggle("Record System Audio", isOn: $store.systemAudio).disabled(store.recording)
+        Divider()
+        Button("Open Editor") {
+            // SwiftUI names WindowGroup windows "<id>-AppWindow-<n>".
+            if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix("editor") == true && $0.isVisible }) { window.makeKeyAndOrderFront(nil) }
+            else { openWindow(id: "editor") }
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        Button("Quit FrameForge") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
 }
 struct Editor: View {

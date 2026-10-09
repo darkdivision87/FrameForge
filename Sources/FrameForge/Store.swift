@@ -15,11 +15,16 @@ import UniformTypeIdentifiers
     @Published var displays: [SCDisplay] = []
     @Published var displayID: UInt32 = CGMainDisplayID()
     @Published var displayOptions: [DisplayOption] = []
-    @Published var systemAudio = true
+    // Remembered across launches: quick capture uses them without the editor open.
+    @Published var systemAudio = UserDefaults.standard.object(forKey:"systemAudio") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(systemAudio,forKey:"systemAudio") }
+    }
     @Published var audioApplicationID: Int32 = 0
     @Published var audioApplications: [AudioApplication] = []
     @Published var microphones: [MicrophoneDevice] = []
-    @Published var microphoneID = "off"
+    @Published var microphoneID = UserDefaults.standard.string(forKey:"microphoneID") ?? "off" {
+        didSet { UserDefaults.standard.set(microphoneID,forKey:"microphoneID") }
+    }
     @Published var region: CGRect?
     @Published var regionMode = false
     @Published var maximumCaptureDimension = 3840
@@ -30,7 +35,9 @@ import UniformTypeIdentifiers
     private var previewObserver: NSKeyValueObservation?
     @Published var showCursor = true
     @Published var trackMouse = true
-    @Published var microphoneGain = 0.5
+    @Published var microphoneGain = UserDefaults.standard.object(forKey:"microphoneGain") as? Double ?? 0.5 {
+        didSet { UserDefaults.standard.set(microphoneGain,forKey:"microphoneGain") }
+    }
     @Published var microphoneLevelDB = -120.0
     @Published var microphoneOverload = false
     @Published var silenceProposal: SilenceProposal?
@@ -58,7 +65,7 @@ import UniformTypeIdentifiers
         hotKey = GlobalHotKey { [weak self] in
             Task { @MainActor in
                 guard let self = self, !self.busy else { return }
-                if self.recording { await self.stopRecording() } else { await self.startRecording() }
+                await self.toggleQuickCapture()
             }
         }
         recorder.onMicrophoneLevel = { [weak self] level in
@@ -72,20 +79,24 @@ import UniformTypeIdentifiers
     var clip: Clip? { project.clips.first { $0.id == selected } }
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
-    var recordingShortcutHint: String { hotKey?.isRegistered == true ? "start / stop ⌥⇧R" : "stop from the menu bar (global shortcut unavailable)" }
+    var recordingShortcutHint: String { hotKey?.isRegistered == true ? "⌥⇧R picks a screen or region, press again to stop" : "stop from the menu bar (global shortcut unavailable)" }
     func report(_ error: Error) {
         let nsError = error as NSError
-        if nsError.domain == SCStreamErrorDomain && nsError.code == -3801 {
-            self.error = "macOS has not allowed screen capture for this build. Enable FrameForge in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording on older macOS), then quit and reopen FrameForge. If the previous build is listed, add this updated app using the + button."
-        } else { self.error = error.localizedDescription }
+        if nsError.domain == SCStreamErrorDomain && nsError.code == -3801 { reportScreenCaptureDenied(); return }
+        self.error = error.localizedDescription
         status = "Action failed"
     }
+    /// Registers this build with macOS (first call shows the system prompt) and opens the exact
+    /// Settings pane, so the person only has to flip the switch and relaunch.
+    func reportScreenCaptureDenied() {
+        if !CGRequestScreenCaptureAccess(), let url = URL(string:"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") { NSWorkspace.shared.open(url) }
+        error = "Turn on FrameForge in System Settings → Privacy & Security → Screen & System Audio Recording (now open), then quit and reopen FrameForge. If an older FrameForge is listed, remove it."
+        status = "Screen recording permission needed"
+    }
     func refreshLocalDevices() {
-        displayOptions = NSScreen.screens.compactMap { screen in
-            guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value else { return nil }
-            return DisplayOption(id:id,name:screen.localizedName)
-        }
+        displayOptions = NSScreen.screens.compactMap { screen in screen.displayID.map { DisplayOption(id:$0,name:screen.localizedName) } }
         microphones = Recorder.microphoneDevices().map { MicrophoneDevice(id:$0.uniqueID,name:$0.localizedName) }
+        if microphoneID != "off", microphoneID != "default", !microphones.contains(where: { $0.id == microphoneID }) { microphoneID = "off"; status = "Saved microphone not connected · microphone off" }
         if !displayOptions.contains(where: { $0.id == displayID }) { changeDisplay(displayOptions.first?.id ?? 0) }
     }
     func mutate(_ operation: (inout Project) -> Void) {
@@ -146,7 +157,7 @@ import UniformTypeIdentifiers
         do { let value = try JSONDecoder().decode(Project.self, from: Data(contentsOf: url)); try value.validated(); mutate { $0 = value }; selected = value.clips.first?.id } catch { report(error) }
     }
     func displayName(_ id: UInt32) -> String {
-        NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }?.localizedName ?? "Display \(id)"
+        NSScreen.screens.first { $0.displayID == id }?.localizedName ?? "Display \(id)"
     }
     var regionLabel: String {
         guard let region = region else { return "No region selected" }
@@ -159,7 +170,25 @@ import UniformTypeIdentifiers
         refreshLocalDevices()
         guard displayID != 0 else { return }
         busy = true; defer { busy = false }
-        do { if let selected = try await regionSelector.select(displayID:displayID) { region = selected; regionMode = true; status = "Region selected · \(regionLabel)" } } catch { report(error) }
+        do { if let selected = try await regionSelector.select(displayIDs:[displayID],allowsFullScreen:false)?.region { region = selected; regionMode = true; status = "Region selected · \(regionLabel)" } } catch { report(error) }
+    }
+    /// Shortcut and menu-bar flow: while idle, pick a region or a whole screen on any display and
+    /// start recording it; while recording, stop (and copy the movie when that setting is on).
+    func toggleQuickCapture() async {
+        if recording { await stopRecording(); return }
+        guard !busy else { return }
+        // Check before the picker so nobody frames a region only to be refused afterwards.
+        error = nil
+        guard CGPreflightScreenCaptureAccess() else { reportScreenCaptureDenied(); return }
+        refreshLocalDevices()
+        busy = true
+        let target: CaptureTarget?
+        do { target = try await regionSelector.select(displayIDs:displayOptions.map(\.id),allowsFullScreen:true) } catch { busy = false; report(error); return }
+        busy = false
+        guard let target = target else { return }
+        displayID = target.displayID; region = target.region; regionMode = target.region != nil
+        // Never brings the app forward: failures show as a warning in the menu bar instead.
+        await startRecording()
     }
     func refreshDisplays() async {
         guard !recording else { return }
@@ -179,7 +208,7 @@ import UniformTypeIdentifiers
         player.pause()
         busy = true; defer { busy = false }
         do {
-            if displays.isEmpty {
+            if !displays.contains(where: { $0.displayID == displayID }) {
                 let sources = try await Recorder.sources(); displays = sources.displays; audioApplications = sources.applications
             }
             guard let display = displays.first(where: { $0.displayID == displayID }) else { throw ForgeError.message("Choose a display after granting Screen Recording access.") }
@@ -202,10 +231,12 @@ import UniformTypeIdentifiers
         defer { busy = false }
         do { try await recorder.stop(); if let url = recordingURL { let value = try await MediaEngine.inspect(url); mutate { $0.clips.append(value) }; selected = value.id; status = "Recording saved · \(recorder.summary)"
                 if copyRecordingToClipboard {
+                    status = "Preparing video for the clipboard…"
+                    let shared = try await ShareCopy.make(from:url)
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    if pasteboard.writeObjects([url as NSURL]) { status = "Recording copied to clipboard · paste to attach the video" }
-                    else { status = "Recording saved; clipboard copy failed · \(url.lastPathComponent)" }
+                    if pasteboard.writeObjects([shared as NSURL]) { status = "Recording copied to clipboard · paste to attach the video" }
+                    else { status = "Recording saved; clipboard copy failed · \(shared.lastPathComponent)" }
                 } } } catch { report(error) }
         recordingURL = nil
     }

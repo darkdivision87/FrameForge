@@ -21,7 +21,7 @@ final class GlobalHotKey {
         let id = EventHotKeyID(signature:0x46464745,id:1)
         isRegistered = RegisterEventHotKey(UInt32(kVK_ANSI_R),UInt32(optionKey|shiftKey),id,GetApplicationEventTarget(),0,&hotKey) == noErr
         let legacyID = EventHotKeyID(signature:0x46464745,id:2)
-        RegisterEventHotKey(UInt32(kVK_ANSI_R),UInt32(cmdKey|shiftKey),legacyID,GetApplicationEventTarget(),0,&legacyHotKey)
+        RegisterEventHotKey(UInt32(kVK_ANSI_R),UInt32(cmdKey|controlKey),legacyID,GetApplicationEventTarget(),0,&legacyHotKey)
     }
     deinit { if let legacyHotKey = legacyHotKey { UnregisterEventHotKey(legacyHotKey) }; if let hotKey = hotKey { UnregisterEventHotKey(hotKey) }; if let handler = handler { RemoveEventHandler(handler) } }
 }

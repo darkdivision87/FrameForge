@@ -11,7 +11,7 @@ Open `build/FrameForge.app`. This delivery is Apple Silicon; run `scripts/build.
 3. Set **Capture size** and **Frame rate**. 1080p max and 4K max limit the long edge without upscaling small selections. This avoids asking H.264 to encode oversized desktop modes such as a 6720-pixel display.
 4. Set **Microphone** to Off, System default input, or a particular hardware/virtual input device. USB and other external audio inputs can appear here.
 5. Enable **Record system / output audio** independently. **All applications** captures computer sound; after **Refresh Sources**, a specific application can be chosen. This selects application audio, not a physical speaker/output device. Microphone and system audio can be enabled together or separately. All-application capture excludes FrameForge's own preview audio.
-6. Click **Start Recording**. macOS may request Screen Recording and Microphone access. Stop with the app button, its menu-bar control, or the global ⌥⇧R shortcut (⌘⇧R remains an alias). The shortcut requires no Accessibility permission; if another app has reserved it, use the menu-bar control instead.
+6. Click **Start Recording**. macOS may request Screen Recording and Microphone access. Stop with the app button, its menu-bar control, or the global ⌥⇧R shortcut (⌃⌘R is an alias). The shortcut requires no Accessibility permission; if another app has reserved it, use the menu-bar control instead.
 7. Recordings are saved in `~/Movies/FrameForge`. Successful recordings are appended to the timeline. The editor itself is excluded from display capture.
 
 ### Permissions
@@ -30,7 +30,7 @@ Export H.264 or HEVC MP4 at 720p, 1080p or 4K and 30/60 fps. Export audio mixes 
 
 Press **Option + Shift + R** anywhere while FrameForge is running to start recording with the selected sources; press again to stop. Command + Shift + R remains an alias. If the primary shortcut is unavailable, the app shows a menu-bar fallback hint. The first recording can require macOS permissions; selected-region mode opens the region picker if no region has been chosen.
 
-**Copy recording to clipboard** is enabled by default and remembered across launches. After the movie finishes saving, its file URL is copied using the macOS file pasteboard representation. Paste into apps that accept video/file attachments, or into Finder. Receiving-app support varies; this does not paste playable video into plain text fields. The original movie remains in Movies/FrameForge, and mouse edits still require export to create an edited movie. Failed recordings leave the clipboard unchanged.
+**Copy recording to clipboard** is enabled by default and remembered across launches. After the movie finishes saving, FrameForge writes a share copy beside it (`Recording-….mp4`): the video samples unchanged and every audio source (microphone, system audio) mixed into one AAC track, because Slack, browsers and most players only play a file's first audio track. That copy's file URL goes on the clipboard. Microphone and system-audio choices are remembered across launches and can be changed from the menu bar. Paste into apps that accept video/file attachments, or into Finder. Receiving-app support varies; this does not paste playable video into plain text fields. The original movie remains in Movies/FrameForge, and mouse edits still require export to create an edited movie. Failed recordings leave the clipboard unchanged.
 
 ## Changes in 0.3.2
 
