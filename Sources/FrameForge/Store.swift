@@ -58,7 +58,7 @@ import UniformTypeIdentifiers
         hotKey = GlobalHotKey { [weak self] in
             Task { @MainActor in
                 guard let self = self, !self.busy else { return }
-                if self.recording { await self.stopRecording() } else { await self.startRecording() }
+                await self.toggleQuickCapture()
             }
         }
         recorder.onMicrophoneLevel = { [weak self] level in
@@ -72,19 +72,22 @@ import UniformTypeIdentifiers
     var clip: Clip? { project.clips.first { $0.id == selected } }
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
-    var recordingShortcutHint: String { hotKey?.isRegistered == true ? "start / stop ⌥⇧R" : "stop from the menu bar (global shortcut unavailable)" }
+    var recordingShortcutHint: String { hotKey?.isRegistered == true ? "⌥⇧R picks a screen or region, press again to stop" : "stop from the menu bar (global shortcut unavailable)" }
     func report(_ error: Error) {
         let nsError = error as NSError
-        if nsError.domain == SCStreamErrorDomain && nsError.code == -3801 {
-            self.error = "macOS has not allowed screen capture for this build. Enable FrameForge in System Settings → Privacy & Security → Screen & System Audio Recording (Screen Recording on older macOS), then quit and reopen FrameForge. If the previous build is listed, add this updated app using the + button."
-        } else { self.error = error.localizedDescription }
+        if nsError.domain == SCStreamErrorDomain && nsError.code == -3801 { reportScreenCaptureDenied(); return }
+        self.error = error.localizedDescription
         status = "Action failed"
     }
+    /// Registers this build with macOS (first call shows the system prompt) and opens the exact
+    /// Settings pane, so the person only has to flip the switch and relaunch.
+    func reportScreenCaptureDenied() {
+        if !CGRequestScreenCaptureAccess(), let url = URL(string:"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") { NSWorkspace.shared.open(url) }
+        error = "Turn on FrameForge in System Settings → Privacy & Security → Screen & System Audio Recording (now open), then quit and reopen FrameForge. If an older FrameForge is listed, remove it."
+        status = "Screen recording permission needed"
+    }
     func refreshLocalDevices() {
-        displayOptions = NSScreen.screens.compactMap { screen in
-            guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value else { return nil }
-            return DisplayOption(id:id,name:screen.localizedName)
-        }
+        displayOptions = NSScreen.screens.compactMap { screen in screen.displayID.map { DisplayOption(id:$0,name:screen.localizedName) } }
         microphones = Recorder.microphoneDevices().map { MicrophoneDevice(id:$0.uniqueID,name:$0.localizedName) }
         if !displayOptions.contains(where: { $0.id == displayID }) { changeDisplay(displayOptions.first?.id ?? 0) }
     }
@@ -146,7 +149,7 @@ import UniformTypeIdentifiers
         do { let value = try JSONDecoder().decode(Project.self, from: Data(contentsOf: url)); try value.validated(); mutate { $0 = value }; selected = value.clips.first?.id } catch { report(error) }
     }
     func displayName(_ id: UInt32) -> String {
-        NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id }?.localizedName ?? "Display \(id)"
+        NSScreen.screens.first { $0.displayID == id }?.localizedName ?? "Display \(id)"
     }
     var regionLabel: String {
         guard let region = region else { return "No region selected" }
@@ -159,8 +162,27 @@ import UniformTypeIdentifiers
         refreshLocalDevices()
         guard displayID != 0 else { return }
         busy = true; defer { busy = false }
-        do { if let selected = try await regionSelector.select(displayID:displayID) { region = selected; regionMode = true; status = "Region selected · \(regionLabel)" } } catch { report(error) }
+        do { if let selected = try await regionSelector.select(displayIDs:[displayID],allowsFullScreen:false)?.region { region = selected; regionMode = true; status = "Region selected · \(regionLabel)" } } catch { report(error) }
     }
+    /// Shortcut and menu-bar flow: while idle, pick a region or a whole screen on any display and
+    /// start recording it; while recording, stop (and copy the movie when that setting is on).
+    func toggleQuickCapture() async {
+        if recording { await stopRecording(); return }
+        guard !busy else { return }
+        // Check before the picker so nobody frames a region only to be refused afterwards.
+        guard CGPreflightScreenCaptureAccess() else { reportScreenCaptureDenied(); revealError(); return }
+        refreshLocalDevices()
+        busy = true
+        let target: CaptureTarget?
+        do { target = try await regionSelector.select(displayIDs:displayOptions.map(\.id),allowsFullScreen:true) } catch { busy = false; report(error); revealError(); return }
+        busy = false
+        guard let target = target else { return }
+        displayID = target.displayID; region = target.region; regionMode = target.region != nil
+        await startRecording()
+        revealError()
+    }
+    /// Errors surface as an editor alert; bring the app forward so one triggered from another app is seen.
+    private func revealError() { if error != nil { NSApp.activate(ignoringOtherApps:true) } }
     func refreshDisplays() async {
         guard !recording else { return }
         refreshLocalDevices()
@@ -179,7 +201,7 @@ import UniformTypeIdentifiers
         player.pause()
         busy = true; defer { busy = false }
         do {
-            if displays.isEmpty {
+            if !displays.contains(where: { $0.displayID == displayID }) {
                 let sources = try await Recorder.sources(); displays = sources.displays; audioApplications = sources.applications
             }
             guard let display = displays.first(where: { $0.displayID == displayID }) else { throw ForgeError.message("Choose a display after granting Screen Recording access.") }

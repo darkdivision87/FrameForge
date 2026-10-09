@@ -11,7 +11,7 @@ Open `build/FrameForge.app`. This delivery is Apple Silicon; run `scripts/build.
 3. Set **Capture size** and **Frame rate**. 1080p max and 4K max limit the long edge without upscaling small selections. This avoids asking H.264 to encode oversized desktop modes such as a 6720-pixel display.
 4. Set **Microphone** to Off, System default input, or a particular hardware/virtual input device. USB and other external audio inputs can appear here.
 5. Enable **Record system / output audio** independently. **All applications** captures computer sound; after **Refresh Sources**, a specific application can be chosen. This selects application audio, not a physical speaker/output device. Microphone and system audio can be enabled together or separately. All-application capture excludes FrameForge's own preview audio.
-6. Click **Start Recording**. macOS may request Screen Recording and Microphone access. Stop with the app button, its menu-bar control, or the global ⌥⇧R shortcut (⌘⇧R remains an alias). The shortcut requires no Accessibility permission; if another app has reserved it, use the menu-bar control instead.
+6. Click **Start Recording**. macOS may request Screen Recording and Microphone access. Stop with the app button, its menu-bar control, or the global ⌥⇧R shortcut (⌃⌘R is an alias). The shortcut requires no Accessibility permission; if another app has reserved it, use the menu-bar control instead.
 7. Recordings are saved in `~/Movies/FrameForge`. Successful recordings are appended to the timeline. The editor itself is excluded from display capture.
 
 ### Permissions

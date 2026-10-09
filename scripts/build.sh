@@ -6,5 +6,8 @@ ARCH=$(uname -m)
 mkdir -p build/FrameForge.app/Contents/MacOS
 swiftc -O -parse-as-library -target "${ARCH}-apple-macosx13.0" -sdk "$SDK" -module-cache-path build/module-cache Sources/FrameForge/*.swift -o build/FrameForge.app/Contents/MacOS/FrameForge
 cp Info.plist build/FrameForge.app/Contents/Info.plist
-codesign --force --sign - build/FrameForge.app
+mkdir -p build/FrameForge.app/Contents/Resources
+cp Resources/AppIcon.icns build/FrameForge.app/Contents/Resources/AppIcon.icns
+# Set FRAMEFORGE_SIGN_IDENTITY to a stable certificate so macOS keeps Screen Recording access across rebuilds.
+codesign --force --sign "${FRAMEFORGE_SIGN_IDENTITY:--}" build/FrameForge.app
 printf 'Built %s/build/FrameForge.app\n' "$PWD"
