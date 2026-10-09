@@ -25,7 +25,7 @@ import AVKit
             MenuBarContent().environmentObject(store)
         } label: {
             if store.recording { Label(timeLabel(store.recordingSeconds), systemImage: "record.circle.fill").labelStyle(.titleAndIcon) }
-            else { Image(systemName: "square.stack.3d.up.fill") }
+            else { Image(systemName: store.error == nil ? "square.stack.3d.up.fill" : "exclamationmark.triangle.fill") }
         }
     }
 }
@@ -38,6 +38,12 @@ struct MenuBarContent: View {
         Button(store.recording ? "Stop Recording" : "Record Screen or Region…") { Task { await store.toggleQuickCapture() } }
             .keyboardShortcut("r", modifiers: [.option,.shift]).disabled(store.busy)
         Toggle("Copy Recording to Clipboard", isOn: $store.copyRecordingToClipboard).disabled(store.recording)
+        Divider()
+        Picker("Microphone", selection: $store.microphoneID) {
+            Text("Off").tag("off"); Text("System Default Input").tag("default")
+            ForEach(store.microphones) { device in Text(device.name).tag(device.id) }
+        }.disabled(store.recording)
+        Toggle("Record System Audio", isOn: $store.systemAudio).disabled(store.recording)
         Divider()
         Button("Open Editor") {
             // SwiftUI names WindowGroup windows "<id>-AppWindow-<n>".

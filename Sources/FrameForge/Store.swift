@@ -15,11 +15,16 @@ import UniformTypeIdentifiers
     @Published var displays: [SCDisplay] = []
     @Published var displayID: UInt32 = CGMainDisplayID()
     @Published var displayOptions: [DisplayOption] = []
-    @Published var systemAudio = true
+    // Remembered across launches: quick capture uses them without the editor open.
+    @Published var systemAudio = UserDefaults.standard.object(forKey:"systemAudio") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(systemAudio,forKey:"systemAudio") }
+    }
     @Published var audioApplicationID: Int32 = 0
     @Published var audioApplications: [AudioApplication] = []
     @Published var microphones: [MicrophoneDevice] = []
-    @Published var microphoneID = "off"
+    @Published var microphoneID = UserDefaults.standard.string(forKey:"microphoneID") ?? "off" {
+        didSet { UserDefaults.standard.set(microphoneID,forKey:"microphoneID") }
+    }
     @Published var region: CGRect?
     @Published var regionMode = false
     @Published var maximumCaptureDimension = 3840
@@ -89,6 +94,7 @@ import UniformTypeIdentifiers
     func refreshLocalDevices() {
         displayOptions = NSScreen.screens.compactMap { screen in screen.displayID.map { DisplayOption(id:$0,name:screen.localizedName) } }
         microphones = Recorder.microphoneDevices().map { MicrophoneDevice(id:$0.uniqueID,name:$0.localizedName) }
+        if microphoneID != "off", microphoneID != "default", !microphones.contains(where: { $0.id == microphoneID }) { microphoneID = "off"; status = "Saved microphone not connected · microphone off" }
         if !displayOptions.contains(where: { $0.id == displayID }) { changeDisplay(displayOptions.first?.id ?? 0) }
     }
     func mutate(_ operation: (inout Project) -> Void) {
@@ -170,19 +176,18 @@ import UniformTypeIdentifiers
         if recording { await stopRecording(); return }
         guard !busy else { return }
         // Check before the picker so nobody frames a region only to be refused afterwards.
-        guard CGPreflightScreenCaptureAccess() else { reportScreenCaptureDenied(); revealError(); return }
+        error = nil
+        guard CGPreflightScreenCaptureAccess() else { reportScreenCaptureDenied(); return }
         refreshLocalDevices()
         busy = true
         let target: CaptureTarget?
-        do { target = try await regionSelector.select(displayIDs:displayOptions.map(\.id),allowsFullScreen:true) } catch { busy = false; report(error); revealError(); return }
+        do { target = try await regionSelector.select(displayIDs:displayOptions.map(\.id),allowsFullScreen:true) } catch { busy = false; report(error); return }
         busy = false
         guard let target = target else { return }
         displayID = target.displayID; region = target.region; regionMode = target.region != nil
+        // Never brings the app forward: failures show as a warning in the menu bar instead.
         await startRecording()
-        revealError()
     }
-    /// Errors surface as an editor alert; bring the app forward so one triggered from another app is seen.
-    private func revealError() { if error != nil { NSApp.activate(ignoringOtherApps:true) } }
     func refreshDisplays() async {
         guard !recording else { return }
         refreshLocalDevices()
@@ -224,10 +229,12 @@ import UniformTypeIdentifiers
         defer { busy = false }
         do { try await recorder.stop(); if let url = recordingURL { let value = try await MediaEngine.inspect(url); mutate { $0.clips.append(value) }; selected = value.id; status = "Recording saved · \(recorder.summary)"
                 if copyRecordingToClipboard {
+                    status = "Preparing video for the clipboard…"
+                    let shared = try await ShareCopy.make(from:url)
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    if pasteboard.writeObjects([url as NSURL]) { status = "Recording copied to clipboard · paste to attach the video" }
-                    else { status = "Recording saved; clipboard copy failed · \(url.lastPathComponent)" }
+                    if pasteboard.writeObjects([shared as NSURL]) { status = "Recording copied to clipboard · paste to attach the video" }
+                    else { status = "Recording saved; clipboard copy failed · \(shared.lastPathComponent)" }
                 } } } catch { report(error) }
         recordingURL = nil
     }
