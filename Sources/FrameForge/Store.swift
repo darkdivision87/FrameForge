@@ -35,7 +35,9 @@ import UniformTypeIdentifiers
     private var previewObserver: NSKeyValueObservation?
     @Published var showCursor = true
     @Published var trackMouse = true
-    @Published var microphoneGain = 0.5
+    @Published var microphoneGain = UserDefaults.standard.object(forKey:"microphoneGain") as? Double ?? 0.5 {
+        didSet { UserDefaults.standard.set(microphoneGain,forKey:"microphoneGain") }
+    }
     @Published var microphoneLevelDB = -120.0
     @Published var microphoneOverload = false
     @Published var silenceProposal: SilenceProposal?

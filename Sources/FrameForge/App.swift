@@ -43,6 +43,10 @@ struct MenuBarContent: View {
             Text("Off").tag("off"); Text("System Default Input").tag("default")
             ForEach(store.microphones) { device in Text(device.name).tag(device.id) }
         }.disabled(store.recording)
+        // Menus can't hold sliders; 10% steps. Applies live, including mid-recording.
+        Picker("Mic Volume · \(Int((store.microphoneGain*100).rounded()))%", selection: Binding(get: { Int((store.microphoneGain*10).rounded())*10 }, set: { store.setMicrophoneGain(Double($0)/100) })) {
+            ForEach(Array(stride(from: 100, through: 10, by: -10)), id: \.self) { percent in Text("\(percent)%").tag(percent) }
+        }.disabled(store.microphoneID == "off")
         Toggle("Record System Audio", isOn: $store.systemAudio).disabled(store.recording)
         Divider()
         Button("Open Editor") {
