@@ -7,6 +7,7 @@ A pocket chord instrument for iPhone, built as an installable web app (no App St
 - **Voice leading**: each chord is voiced to sit close to the previous one, so progressions move smoothly. The display shows the inversion.
 - **Sound**: KEYS, PAD, PLUCK, played as BLOCK, STRUM or ARP. All synthesized with Web Audio.
 - **Sequencer**: 4 or 8 steps of 1, 2 or 4 beats. Arm REC and tap pads, or tap PLAY and record live (a tap in the last quarter of a step lands on the next one). TIE extends the previous chord. COPY puts the progression on the clipboard as text.
+- **Export MIDI**: EXPORT turns the loop into a 3-track .mid (chords, bass, tempo and key). In the installed app it opens the iPhone share sheet (AirDrop, Save to Files, Mail). Inside the Claude app the page may only save certain file types, so it saves a .zip holding the .mid and a chord sheet; tap the zip in Files to unzip.
 - **Desktop keys**: 1-7 chords, 8 tie, Space play/stop, R record.
 
 ## Install on iPhone
@@ -22,4 +23,4 @@ Host the `ch1/` folder over HTTPS (GitHub Pages, Netlify, any static host), open
 ## Notes
 
 - iOS only plays Web Audio after a tap, so the first pad touch wakes audio. CH-1 also asks Safari for playback audio so it sounds with the silent switch on (iOS 16.4+).
-- Not yet done: MIDI export, manual inversion control, chord-per-step editing of extensions beyond what was active at record time.
+- Not yet done: manual inversion control, melody layer.
