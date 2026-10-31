@@ -641,14 +641,16 @@ function ensureAudio(){
   if(ctx){ if(ctx.state!=='running'){ try{ctx.resume();}catch(e){} } return ctx; }
   const AC=window.AudioContext||window.webkitAudioContext;
   if(!AC) return null;
-  try{ ctx=new AC({latencyHint:'interactive'}); }catch(e){ try{ ctx=new AC(); }catch(e2){ return null; } }
-  const master=ctx.createGain(); master.gain.value=0.9;
+  try{ ctx=new AC({latencyHint:'balanced'}); }catch(e){ try{ ctx=new AC(); }catch(e2){ return null; } }
+  const master=ctx.createGain(); master.gain.value=0.85;
   const comp=ctx.createDynamicsCompressor();
-  comp.threshold.value=-16;comp.knee.value=18;comp.ratio.value=4;comp.attack.value=0.004;comp.release.value=0.22;
-  bus=ctx.createGain(); bus.gain.value=0.7; bus.connect(master);
-  const conv=ctx.createConvolver(); conv.buffer=impulse(ctx,2.2,2.6);
-  const wet=ctx.createGain(); wet.gain.value=0.22; bus.connect(conv); conv.connect(wet); wet.connect(master);
-  master.connect(comp); comp.connect(ctx.destination);
+  comp.threshold.value=-20;comp.knee.value=14;comp.ratio.value=5;comp.attack.value=0.006;comp.release.value=0.25;
+  const lim=ctx.createDynamicsCompressor(); // safety limiter so stacked layers never clip
+  lim.threshold.value=-3;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=0.002;lim.release.value=0.1;
+  bus=ctx.createGain(); bus.gain.value=0.4; bus.connect(master);
+  const conv=ctx.createConvolver(); conv.buffer=impulse(ctx,1.3,2.4);
+  const wet=ctx.createGain(); wet.gain.value=0.2; bus.connect(conv); conv.connect(wet); wet.connect(master);
+  master.connect(comp); comp.connect(lim); lim.connect(ctx.destination);
   try{ ctx.resume(); }catch(e){}
   unlockIOS();
   ctx.onstatechange=updateSig;
@@ -662,7 +664,7 @@ function playNote(m,t,vel,kind){
   const f=mtof(m),out=ctx.createGain(),env=ctx.createGain(),oscs=[];
   out.connect(bus);env.connect(out);
   const g=Math.max(.05,Math.min(1.3,vel));
-  let relTc=.12,life=40;
+  let relTc=.12;
   const mk=(type,freq,det)=>{const o=ctx.createOscillator();o.type=type;o.frequency.value=freq;if(det) o.detune.value=det;oscs.push(o);return o;};
   const filt=(fq,q)=>{const lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=fq;lp.Q.value=q;lp.connect(env);return lp;};
   if(kind==='keys'){
@@ -673,7 +675,7 @@ function playNote(m,t,vel,kind){
     const pk=.22*g;
     env.gain.setValueAtTime(0,t);env.gain.linearRampToValueAtTime(pk,t+.006);
     env.gain.setTargetAtTime(pk*.45,t+.006,.55);env.gain.setTargetAtTime(.0001,t+1.6,2.2);
-    relTc=.14;life=8;
+    relTc=.14;
   } else if(kind==='pad'){
     const lp=filt(380,.6);
     lp.frequency.setValueAtTime(380,t);lp.frequency.linearRampToValueAtTime(1500,t+.7);
@@ -688,7 +690,7 @@ function playNote(m,t,vel,kind){
     const pk=.2*g;
     env.gain.setValueAtTime(0,t);env.gain.linearRampToValueAtTime(pk,t+.004);
     env.gain.setTargetAtTime(.0001,t+.01,.34);
-    relTc=.08;life=4;
+    relTc=.08;
   } else if(kind==='sub'){
     mk('sine',f).connect(env);
     const h=ctx.createGain();h.gain.value=.14;mk('triangle',f*2).connect(h);h.connect(env);
@@ -716,17 +718,25 @@ function playNote(m,t,vel,kind){
     env.gain.setTargetAtTime(pk*.8,t+.05,.3);
     relTc=.14;
   }
-  oscs.forEach(o=>{o.start(t);safeStop(o,t+life);});
-  let relT=Infinity;
+  oscs.forEach(o=>o.start(t));
+  let relT=Infinity,stopped=false;
+  const stopOnce=at=>{ if(stopped) return; stopped=true; oscs.forEach(o=>safeStop(o,at)); };
   return {
     endT:Infinity,
     release(tr){
       const now=ctx.currentTime;
-      tr=Math.max(tr,now,t);
+      if(tr<=t){ // cancelled before it began: make sure it never sounds
+        if(relT===-1) return;
+        relT=-1;this.endT=t;
+        try{ out.gain.cancelScheduledValues(0); out.gain.setValueAtTime(0,now); }catch(e){}
+        stopOnce(Math.max(t,now));
+        return;
+      }
+      tr=Math.max(tr,now);
       if(tr>=relT) return;
-      relT=tr;this.endT=tr+relTc*9;
+      relT=tr;this.endT=tr+relTc*6;
       try{ out.gain.cancelScheduledValues(tr); out.gain.setTargetAtTime(0,tr,relTc); }catch(e){}
-      oscs.forEach(o=>safeStop(o,tr+relTc*9));
+      stopOnce(tr+relTc*6);   // Safari allows only one stop(); the gain is already ~-50 dB by then
     }
   };
 }
@@ -1122,7 +1132,7 @@ async function play(){
   playing=true;uiQ=[];curStep=-1;
   loop=buildLoop();loopDirty=false;ei=0;mi=0;schedBeat=0;
   loopT0=ctx.currentTime+.08;
-  seqTimer=setInterval(tick,25);
+  seqTimer=setInterval(tick,40);
   $('#play').setAttribute('aria-pressed','true');
   $('#playTxt').textContent='STOP';$('#playIcon').className='sq';
   baseMsg();
@@ -1149,7 +1159,7 @@ function schedEvent(e,spb){
   let t=loopT0+e.beat*spb;
   const hm=HUM_MS[st.human]/1000;
   if(hm) t+=(Math.random()*2-1)*hm;
-  const now=ctx.currentTime;if(t<now) t=now;
+  const now=ctx.currentTime;if(t<now+.005) t=now+.005;
   let v=e.vel/127*VOL_M[L.vol]*LAYER_G[e.layer]*1.1;
   if(st.human) v*=1+(Math.random()*2-1)*.06*st.human;
   const h=playNote(e.note,t,v,KINDS[e.layer][L.voice]);
@@ -1158,7 +1168,7 @@ function schedEvent(e,spb){
 }
 function tick(){
   if(!playing||!ctx) return;
-  const spb=60/st.bpm,horizon=ctx.currentTime+.15;
+  const spb=60/st.bpm,horizon=ctx.currentTime+.4;
   for(let guard=0;guard<4;guard++){
     if(loopDirty){
       loop=buildLoop();loopDirty=false;

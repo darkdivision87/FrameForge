@@ -1,5 +1,5 @@
 // CH-1 service worker: cache the app shell, and cache web fonts as they load, so the device works offline.
-const CACHE = 'ch1-v3';
+const CACHE = 'ch1-v4';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
