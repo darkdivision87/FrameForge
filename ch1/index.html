@@ -67,8 +67,8 @@ button:focus-visible{outline:3px solid var(--ember);outline-offset:2px}
 .tab{display:none;flex:1 1 auto;min-height:0;flex-direction:column;gap:10px}
 .tab.on{display:flex}
 .tab.scroll{overflow-y:auto;overflow-x:hidden;padding:2px 2px 10px;margin:0 -2px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
-.tabbar{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;background:var(--well);border-radius:14px;padding:4px}
-.tabbar button{height:46px;border:0;border-radius:10px;background:transparent;font-size:16px;font-weight:700;letter-spacing:.1em;color:var(--ink-2);padding:0}
+.tabbar{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;background:var(--well);border-radius:14px;padding:4px}
+.tabbar button{height:46px;border:0;border-radius:10px;background:transparent;font-size:14px;font-weight:700;letter-spacing:.05em;color:var(--ink-2);padding:0}
 .tabbar button[aria-selected="true"]{background:var(--ink);color:var(--cap)}
 
 /* LCD */
@@ -187,6 +187,16 @@ button:focus-visible{outline:3px solid var(--ember);outline-offset:2px}
 .opt.scale{align-items:flex-start;padding:0 12px;font-size:19px;height:54px}
 .opt.keyo{height:54px;font-size:21px}
 
+/* presets */
+.slot{display:grid;grid-template-columns:1fr 96px;gap:8px}
+.slot .opt{height:56px}
+.slot .slotload{align-items:flex-start;padding:0 12px;font-size:17px;text-align:left}
+.slot .slotload small{font-size:12px}
+.slot .slotload[aria-disabled="true"]{opacity:.55}
+.slot .slotsave{font-size:15px;letter-spacing:.08em}
+.slot .slotsave.arm{background:var(--ink);color:var(--cap)}
+.opt .d{font-size:12px;font-weight:600;color:var(--ink-2);letter-spacing:.02em;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+
 /* toast */
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(112px + env(safe-area-inset-bottom,0px));z-index:60;max-width:calc(100% - 32px);
   background:var(--ink);color:var(--cap);font-size:15px;font-weight:600;letter-spacing:.08em;padding:10px 16px;border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,.35);pointer-events:none;text-align:center}
@@ -236,6 +246,9 @@ button:focus-visible{outline:3px solid var(--ember);outline-offset:2px}
     <!-- LAYERS -->
     <section class="tab scroll" data-tab="layers" aria-label="Layers" id="tabLayers"></section>
 
+    <!-- PRESETS -->
+    <section class="tab scroll" data-tab="presets" aria-label="Presets" id="tabPresets"></section>
+
     <!-- EXPORT -->
     <section class="tab scroll" data-tab="export" aria-label="Export" id="tabExport"></section>
   </div>
@@ -254,6 +267,7 @@ button:focus-visible{outline:3px solid var(--ember);outline-offset:2px}
     <button type="button" role="tab" data-tabbtn="play" aria-selected="true">PLAY</button>
     <button type="button" role="tab" data-tabbtn="build" aria-selected="false">BUILD</button>
     <button type="button" role="tab" data-tabbtn="layers" aria-selected="false">LAYERS</button>
+    <button type="button" role="tab" data-tabbtn="presets" aria-selected="false">PRESETS</button>
     <button type="button" role="tab" data-tabbtn="export" aria-selected="false">EXPORT</button>
   </nav>
 </main>
@@ -353,6 +367,7 @@ const OPT={
 };
 const DEFAULTS={
   key:0,mode:0,ext:0,sus:0,bpm:88,len:4,nSteps:4,sel:0,swing:0,human:1,reps:2,stems:0,spice:1,layer:1,tab:'play',
+  user:[null,null,null,null,null,null],
   steps:[{t:'c',d:5,ext:0,sus:0},{t:'c',d:3,ext:0,sus:0},{t:'c',d:0,ext:0,sus:0},{t:'c',d:4,ext:0,sus:0},null,null,null,null],
   layers:{
     chords:{on:1,vol:1,voice:0,rhythm:0,strum:1},
@@ -376,7 +391,7 @@ function load(){
     if(Number.isInteger(r.mode)&&r.mode>=0&&r.mode<MODES.length) s.mode=r.mode;
     if(Number.isInteger(r.bpm)&&r.bpm>=50&&r.bpm<=180) s.bpm=r.bpm;
     if(Number.isInteger(r.sel)&&r.sel>=0&&r.sel<8) s.sel=r.sel;
-    if(['play','build','layers','export'].includes(r.tab)) s.tab=r.tab;
+    if(['play','build','layers','presets','export'].includes(r.tab)) s.tab=r.tab;
     if(Array.isArray(r.steps)&&r.steps.length===8){
       s.steps=r.steps.map(x=>{
         if(x&&x.t==='tie') return {t:'tie'};
@@ -384,6 +399,7 @@ function load(){
         return null;
       });
     }
+    if(Array.isArray(r.user)) s.user=Array.from({length:6},(_,i)=>{ const u=r.user[i]; return u&&typeof u.n==='string'&&u.snap&&typeof u.snap==='object'?{n:u.n.slice(0,60),snap:u.snap}:null; });
     const mn=get(r,'layers.mel.notes');
     if(Array.isArray(mn)) s.layers.mel.notes=mn.filter(n=>n&&Number.isFinite(n.b)&&Number.isFinite(n.d)&&Number.isInteger(n.deg)).slice(0,300);
   }catch(e){}
@@ -937,7 +953,7 @@ function buildPanels(){
     '<button type="button" class="act" id="bGen">GENERATE PROGRESSION</button>'+
     '<button type="button" class="act hot" id="bSurprise">SURPRISE ME (EVERYTHING)</button>'+
     '<p class="hint">Generate keeps your sound and writes a new progression. Surprise me also picks a new key, scale, rhythm, arp, bass and melody.</p>';
-  $('#cardPresets').innerHTML='<div class="lbl">PRESET PROGRESSIONS</div><div class="grid" style="--c:2" id="presetGrid"></div>';
+  $('#cardPresets').innerHTML='<div class="lbl">CHORD PROGRESSIONS ONLY</div><div class="grid" style="--c:2" id="presetGrid"></div>';
   $('#cardFeel').innerHTML='<div class="lbl">FEEL AND LENGTH</div>'+segHTML('swing','SWING')+segHTML('human','HUMANIZE')+segHTML('nSteps','LENGTH')+segHTML('len','STEP SIZE');
   const T=$('#tabLayers');
   const hdr='<div class="card">'+segHTML('layer','')+'</div>';
@@ -956,6 +972,11 @@ function buildPanels(){
     '<button type="button" class="act go" id="bExport">EXPORT MIDI</button>'+
     '<div class="card"><button type="button" class="act" id="copy">COPY CHORDS AS TEXT</button><button type="button" class="act" id="clr">CLEAR PROGRESSION</button></div>'+
     '<p class="hint">Turn layers on or off in the Layers tab. Only layers that are on are exported, each on its own MIDI track.</p>';
+  $('#tabPresets').innerHTML='<div class="card"><div class="lbl">FACTORY PRESETS</div>'+
+    '<p class="hint">Each one sets the scale, tempo, swing, progression, chord rhythm, arp, bass and melody. They keep your key. Tap one to hear it.</p>'+
+    '<div class="grid" style="--c:2" id="factGrid"></div></div>'+
+    '<div class="card"><div class="lbl">MY PRESETS</div><p class="hint">SAVE stores everything you hear right now in that slot. Tap the name to bring it back.</p>'+
+    [0,1,2,3,4,5].map(i=>'<div class="slot"><button type="button" class="opt slotload" data-slot="'+i+'"></button><button type="button" class="opt slotsave" data-save="'+i+'">SAVE</button></div>').join('')+'</div>';
   const pg=$('#presetGrid');
   PRESETS.forEach((p,i)=>{
     const b=document.createElement('button');b.type='button';b.className='opt big';b.dataset.preset=i;b.innerHTML=p.n+'<small></small>';pg.appendChild(b);
@@ -1249,6 +1270,92 @@ $('#bMel').addEventListener('click',()=>{
   st.layers.mel.on=1;genMelody();loopDirty=true;refreshAll();startIfIdle();toast('NEW MELODY');
 });
 
+/* ================= full presets (factory + my presets) ================= */
+function applyState(sn){
+  const g=(o,p)=>{try{return p.split('.').reduce((a,k)=>a[k],o);}catch(e){return undefined;}};
+  const skip=['layer','spice','reps','stems','ext','sus'];
+  for(const p in OPT){ if(skip.includes(p)) continue; const v=g(sn,p); if(OPT[p].some(x=>x[0]===v)) setP(p,v); }
+  if(Number.isInteger(sn.key)&&sn.key>=0&&sn.key<12) st.key=sn.key;
+  if(Number.isInteger(sn.mode)&&sn.mode>=0&&sn.mode<MODES.length) st.mode=sn.mode;
+  if(Number.isInteger(sn.len)&&[1,2,4].includes(sn.len)) st.len=sn.len;
+  if(Number.isInteger(sn.nSteps)&&[4,8].includes(sn.nSteps)) st.nSteps=sn.nSteps;
+  if(Array.isArray(sn.steps)&&sn.steps.length===8){
+    st.steps=sn.steps.map(x=>{
+      if(x&&x.t==='tie') return {t:'tie'};
+      if(x&&x.t==='c'&&Number.isInteger(x.d)&&x.d>=0&&x.d<7) return {t:'c',d:x.d,ext:[0,1,2].includes(x.ext)?x.ext:0,sus:[0,2,4].includes(x.sus)?x.sus:0};
+      return null;
+    });
+  }
+  const mn=g(sn,'layers.mel.notes');
+  st.layers.mel.notes=Array.isArray(mn)?mn.filter(n=>n&&Number.isFinite(n.b)&&Number.isFinite(n.d)&&Number.isInteger(n.deg)).slice(0,300):[];
+  st.sel=0;
+  if(st.layers.mel.on&&!st.layers.mel.notes.length) genMelody();
+  if(Number.isInteger(sn.bpm)&&sn.bpm>=50&&sn.bpm<=180) setBpm(sn.bpm);
+  lastCentroid=null;loopDirty=true;refreshAll();
+}
+const BASE_LAYERS=()=>JSON.parse(JSON.stringify(DEFAULTS.layers));
+const FL=(o)=>{ const b=BASE_LAYERS(); for(const k in o) Object.assign(b[k],o[k]); b.mel.notes=[]; return b; };
+const ST=(arr,n)=>{ const o=arr.map(a=>Array.isArray(a)?{t:'c',d:a[0],ext:a[1],sus:0}:{t:'c',d:a,ext:n||0,sus:0}); while(o.length<8) o.push(null); return o; };
+const FACTORY=[
+  {n:'LOFI',d:'slow, swung, mellow',mode:0,bpm:78,swing:2,human:2,len:4,nSteps:4,steps:ST([1,4,0,5],1),
+    layers:FL({chords:{voice:0,rhythm:3,strum:1},bass:{voice:0,pattern:4},mel:{on:1,voice:1,density:0}})},
+  {n:'HOUSE',d:'124 bpm, offbeat stabs',mode:1,bpm:124,swing:0,human:1,len:4,nSteps:4,steps:ST([0,5,2,6]),
+    layers:FL({chords:{voice:2,rhythm:2,strum:0},bass:{voice:1,pattern:5},arp:{on:1,voice:0,pattern:0,rate:3,oct:2,gate:0,vol:0}})},
+  {n:'TRAP',d:'dark, heavy sub',mode:1,bpm:140,swing:0,human:1,len:4,nSteps:4,steps:ST([0,6,5,4]),
+    layers:FL({chords:{voice:1,rhythm:0,strum:2,vol:0},bass:{voice:0,pattern:7,reg:0,vol:2},arp:{on:1,voice:0,pattern:4,rate:3,oct:2,reg:2,gate:0,vol:0},mel:{on:1,voice:0,density:0,range:1}})},
+  {n:'POP ANTHEM',d:'bright and driving',mode:0,bpm:100,swing:0,human:1,len:4,nSteps:4,steps:ST([0,4,5,3]),
+    layers:FL({chords:{voice:0,rhythm:1,strum:0},bass:{voice:2,pattern:2},mel:{on:1,voice:0,density:1}})},
+  {n:'CINEMATIC',d:'slow pads, wide melody',mode:1,bpm:70,swing:0,human:2,len:4,nSteps:4,steps:ST([0,5,3,4],1),
+    layers:FL({chords:{voice:1,rhythm:0,strum:2},bass:{voice:0,pattern:0,reg:0},arp:{on:1,voice:2,pattern:0,rate:1,oct:3,gate:3,vol:0},mel:{on:1,voice:0,density:0,range:1}})},
+  {n:'JAZZ',d:'swung, walking bass',mode:0,bpm:92,swing:3,human:2,len:4,nSteps:4,steps:ST([[1,1],[4,2],[0,1],[5,2]]),
+    layers:FL({chords:{voice:0,rhythm:4,strum:0},bass:{voice:2,pattern:6},mel:{on:1,voice:1,density:1}})},
+  {n:'NEO SOUL',d:'9ths, lazy groove',mode:2,bpm:84,swing:2,human:2,len:4,nSteps:4,steps:ST([[0,2],[3,2],[1,2],[4,1]]),
+    layers:FL({chords:{voice:0,rhythm:3,strum:1},bass:{voice:0,pattern:7},arp:{on:1,voice:1,pattern:2,rate:2,oct:1,gate:1,vol:0},mel:{on:1,voice:1,density:0}})},
+  {n:'SYNTHWAVE',d:'arps and saw bass',mode:1,bpm:108,swing:0,human:1,len:4,nSteps:4,steps:ST([0,5,2,6]),
+    layers:FL({chords:{voice:1,rhythm:1,strum:0},bass:{voice:1,pattern:2},arp:{on:1,voice:0,pattern:2,rate:3,oct:2,gate:1},mel:{on:1,voice:0,density:1,range:1}})},
+  {n:'FLAMENCO',d:'phrygian, plucked',mode:5,bpm:96,swing:0,human:1,len:4,nSteps:4,steps:ST([0,1,2,1]),
+    layers:FL({chords:{voice:2,rhythm:4,strum:1},bass:{voice:2,pattern:1},arp:{on:1,voice:0,pattern:1,rate:3,oct:2,gate:0,vol:0},mel:{on:1,voice:2,density:1}})},
+  {n:'AMBIENT',d:'floating, no rush',mode:4,bpm:66,swing:0,human:2,len:4,nSteps:4,steps:ST([[0,2],[1,1],[0,1],[4,1]]),
+    layers:FL({chords:{voice:1,rhythm:0,strum:2,vol:0},bass:{voice:0,pattern:0,reg:0,vol:0},arp:{on:1,voice:2,pattern:0,rate:1,oct:3,gate:3,vol:0},mel:{on:1,voice:1,density:0,range:1}})},
+  {n:'CANON',d:'8 chords, gentle',mode:0,bpm:76,swing:0,human:1,len:2,nSteps:8,steps:ST([0,4,5,2,3,0,3,4]),
+    layers:FL({chords:{voice:0,rhythm:0,strum:1},bass:{voice:0,pattern:4},mel:{on:1,voice:1,density:1}})},
+  {n:'CLEAN',d:'start fresh',mode:0,bpm:88,swing:0,human:1,len:4,nSteps:4,steps:ST([5,3,0,4]),
+    layers:FL({chords:{voice:0,rhythm:0,strum:1},bass:{on:0},mel:{on:0}})}
+];
+$('#factGrid').innerHTML=FACTORY.map((f,i)=>'<button type="button" class="opt big" data-fact="'+i+'">'+f.n+'<span class="d">'+f.d+'</span></button>').join('');
+function applyFactory(i){
+  const f=FACTORY[i];
+  applyState({mode:f.mode,bpm:f.bpm,swing:f.swing,human:f.human,len:f.len,nSteps:f.nSteps,steps:f.steps,layers:JSON.parse(JSON.stringify(f.layers))});
+  startIfIdle();
+  toast(f.n+' LOADED');
+}
+function snapshot(){
+  return JSON.parse(JSON.stringify({key:st.key,mode:st.mode,bpm:st.bpm,swing:st.swing,human:st.human,len:st.len,nSteps:st.nSteps,steps:st.steps,layers:st.layers}));
+}
+function slotName(){ return progressionText().replace(/ \| /g,' ').replace(/ ?-( |$)/g,'$1').trim()+' \u00B7 '+st.bpm; }
+function renderPresets(){
+  $$('[data-slot]').forEach(b=>{
+    const u=st.user[+b.dataset.slot];
+    b.innerHTML=u?(u.n.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'<small>'+(u.snap.key>=0&&u.snap.key<12?(NOTE_S[u.snap.key]+' '+((MODES[u.snap.mode]||MODES[0]).short)):'')+'</small>'):'EMPTY SLOT<small>tap SAVE to store this</small>';
+    b.setAttribute('aria-disabled',String(!u));
+    b.setAttribute('aria-label',u?'Load preset '+u.n:'Empty slot');
+  });
+}
+const saveArm={};
+document.addEventListener('click',e=>{
+  const f=e.target.closest('[data-fact]'); if(f){ applyFactory(+f.dataset.fact); return; }
+  const l=e.target.closest('[data-slot]');
+  if(l){ const u=st.user[+l.dataset.slot]; if(!u){ toast('EMPTY. TAP SAVE FIRST'); return; } applyState(u.snap); startIfIdle(); toast('LOADED SLOT '+(+l.dataset.slot+1)); return; }
+  const sv=e.target.closest('[data-save]');
+  if(sv){
+    const i=+sv.dataset.save;
+    if(st.user[i]&&!saveArm[i]){ saveArm[i]=true;sv.classList.add('arm');sv.textContent='OVERWRITE?';setTimeout(()=>{saveArm[i]=false;sv.classList.remove('arm');sv.textContent='SAVE';},2200);return; }
+    saveArm[i]=false;sv.classList.remove('arm');
+    st.user[i]={n:slotName(),snap:snapshot()};save();renderPresets();
+    sv.textContent='SAVED';setTimeout(()=>{sv.textContent='SAVE';},1200);
+  }
+});
+
 /* ================= clipboard, clear ================= */
 function flash(btn,txt,ms,restore){ btn.textContent=txt; clearTimeout(btn._t); btn._t=setTimeout(()=>{ btn.textContent=restore(); btn.classList.remove('arm'); },ms||1600); }
 let clrArmed=false;
@@ -1405,7 +1512,7 @@ $('#bExport').addEventListener('click',exportMidi);
 
 /* ================= wiring ================= */
 function refreshAll(){
-  renderTune();renderPads();renderBound();renderSteps();
+  renderTune();renderPads();renderBound();renderSteps();renderPresets();
   if(!held.size&&!playing) showIdle();
   if(st.tab==='export') renderSummary();
   save();

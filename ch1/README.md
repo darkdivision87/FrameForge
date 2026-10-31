@@ -1,6 +1,6 @@
 # CH-1 Chord Forge
 
-Four tabs: **Play** (pads, record, loop strip), **Build** (step editor, presets, generator, swing, humanize), **Layers** (chords, arp, bass, melody), **Export** (MIDI).
+Five tabs: **Play** (pads, record, loop strip), **Build** (step editor, presets, generator, swing, humanize), **Layers** (chords, arp, bass, melody), **Presets** (12 factory presets plus 6 save slots), **Export** (MIDI).
 
 - **Layers**: each has its own sound, level and patterns. Chords: 5 rhythms and strum. Arp: 6 patterns, 5 speeds, 1-3 octaves, register, note length. Bass: 8 patterns. Melody: generated from your chords and scale (density, range, new melody).
 - **Ideas**: 12 preset progressions, a weighted-random progression generator, and Surprise Me (new key, scale, tempo, rhythm, arp, bass, melody).
