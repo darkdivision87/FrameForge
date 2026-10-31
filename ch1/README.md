@@ -12,7 +12,7 @@ A pocket chord instrument for iPhone, built as an installable web app (no App St
 
 ## Install on iPhone
 
-Host the `ch1/` folder over HTTPS (GitHub Pages, Netlify, any static host), open it in Safari, tap Share, then **Add to Home Screen**. It then runs full screen and works offline. Settings and the progression are saved on the device.
+The `ch1/` folder deploys to GitHub Pages from `main` (see `.github/workflows/pages.yml`; one-time: Settings > Pages > Source: GitHub Actions). Open the Pages URL in Safari, tap Share, then **Add to Home Screen**. It then runs full screen and works offline. Settings and the progression are saved on the device.
 
 ## Files
 
