@@ -23,6 +23,8 @@ struct SmartEditingPanel: View {
                 Picker("Mouse zoom",selection:Binding(get:{ clip.mouseStyle ?? "off" },set:{ changeMouse(mode:$0) })) {
                     Text("Off").tag("off"); Text("Follow mouse").tag("follow"); Text("Focus clicks").tag("clicks")
                 }.disabled(!hasMouse || store.busy)
+                .padding(6).background((clip.mouseStyle ?? "off") != "off" ? Color.mint.opacity(0.18) : Color.clear).cornerRadius(8)
+                if (clip.mouseStyle ?? "off") != "off" { Label("Mouse zoom enabled",systemImage:"checkmark.circle.fill").font(.caption).foregroundColor(.mint) }
                 if hasMouse {
                     Picker("Zoom amount",selection:Binding(get:{ clip.mouseZoom ?? 1.6 },set:{ changeMouse(zoom:$0) })) {
                         ForEach([1.25,1.6,2,2.5],id: \.self) { value in Text("\(value,specifier:"%.2g")×").tag(value) }
@@ -32,7 +34,7 @@ struct SmartEditingPanel: View {
                     }
                     Text("Smooth pan/zoom is applied in both preview and export. Original recording stays unchanged.").font(.caption2).foregroundColor(.secondary)
                 } else {
-                    Text("Mouse-follow needs a new FrameForge recording with Track mouse for editing enabled.").font(.caption2).foregroundColor(.secondary)
+                    Text("Mouse-follow needs a new FrameForge recording with Enable mouse tracking for zoom turned on.").font(.caption2).foregroundColor(.secondary)
                 }
             }
             Group {

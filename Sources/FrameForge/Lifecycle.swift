@@ -12,3 +12,23 @@ import AppKit
         return .terminateNow
     }
 }
+
+/// Keep the editor out of capture without hiding the menu-bar stop control.
+@MainActor final class CaptureWindowVisibility {
+    private var windows: [NSWindow] = []
+    private weak var keyWindow: NSWindow?
+    func hide() {
+        guard windows.isEmpty else { return }
+        keyWindow = NSApp.keyWindow
+        windows = NSApp.windows.filter { ($0.isVisible || $0.canBecomeMain) && $0.level == .normal }
+        windows.forEach { $0.orderOut(nil) }
+    }
+    func restore() {
+        let saved = windows; windows = []
+        NSApp.unhide(nil)
+        saved.forEach { $0.deminiaturize(nil); $0.orderFront(nil) }
+        (keyWindow ?? saved.first)?.makeKeyAndOrderFront(nil)
+        keyWindow = nil
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}

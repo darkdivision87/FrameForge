@@ -27,6 +27,16 @@ import AppKit
         input.markAsFinished(); await writer.finishWriting()
         }
         let original = try await MediaEngine.inspect(source)
+        precondition(original.mouseStyle == "off")
+        var cutProject = Project(); cutProject.clips = [original]
+        let cut = try cutProject.removingRange(from:0.5,to:1.25)
+        let cutRender = try await MediaEngine.compose(cut)
+        precondition(abs(cutRender.composition.duration.seconds - (original.duration-0.75)) < 0.01)
+        let sourceAudio = try await AVURLAsset(url:source).loadTracks(withMediaType:.audio)
+        let cutAudio = try await cutRender.composition.loadTracks(withMediaType:.audio)
+        precondition(sourceAudio.count == cutAudio.count)
+        for track in cutAudio { precondition(track.segments.filter { !$0.isEmpty }.count == 2) }
+        print("PASS: manual middle cut composes with synchronized audio and mouse zoom defaults off")
         let split = try original.split(at: 1)
         assert(abs(split.0.duration-1) < 0.05)
         assert(abs(split.1.start-1) < 0.05)

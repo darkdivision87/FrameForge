@@ -23,7 +23,7 @@ enum MediaEngine {
         if let data = try? Data(contentsOf:CaptureMetadata.url(for:url)) { metadata = try? JSONDecoder().decode(CaptureMetadata.self,from:data) }
         else { metadata = nil }
         if let recorded = metadata, recorded.version == 1, recorded.audioNames.count == names.count { names = recorded.audioNames }
-        return Clip(path: url.path, name: url.deletingPathExtension().lastPathComponent, sourceDuration: duration, end: duration, audioNames:names, audioVolumes:Array(repeating:1,count:names.count),cursorSamples:metadata?.cursor,mouseStyle:metadata?.cursor.isEmpty == false ? "clicks" : "off",mouseZoom:1.6)
+        return Clip(path: url.path, name: url.deletingPathExtension().lastPathComponent, sourceDuration: duration, end: duration, audioNames:names, audioVolumes:Array(repeating:1,count:names.count),cursorSamples:metadata?.cursor,mouseStyle:"off",mouseZoom:1.6)
     }
     static func compose(_ project: Project) async throws -> Render {
         try project.validated()

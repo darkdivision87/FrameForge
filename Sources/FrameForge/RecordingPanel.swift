@@ -29,8 +29,11 @@ struct RecordingPanel: View {
                     Divider()
                     Text("AUDIO INPUT").font(.caption2.bold()).foregroundColor(.secondary)
                     Picker("Microphone",selection:$store.microphoneID) {
-                        Text("Off").tag("off"); Text("System default input").tag("default")
+                        Text("Auto · USB only").tag("auto"); Text("Off").tag("off"); Text("System default input (manual)").tag("default")
                         ForEach(store.microphones) { device in Text(device.name).tag(device.id) }
+                    }
+                    if store.microphoneID == "auto" {
+                        Text("Auto: \(store.automaticMicrophoneLabel). Built-in inputs are never selected automatically.").font(.caption2).foregroundColor(.secondary)
                     }
                     Toggle("Record system / output audio",isOn:$store.systemAudio)
                     if store.systemAudio {
@@ -41,12 +44,14 @@ struct RecordingPanel: View {
                     }
                     Text("Microphone and output audio are saved separately, with individual volume controls in the editor. Output audio follows the selected applications, across output devices.").font(.caption2).foregroundColor(.secondary)
                     Toggle("Show cursor",isOn:$store.showCursor)
-                    Toggle("Track mouse for editing",isOn:$store.trackMouse)
+                    Toggle("Enable mouse tracking for zoom",isOn:$store.trackMouse).tint(.mint)
+                        .padding(8).background(store.trackMouse ? Color.mint.opacity(0.18) : Color.clear).cornerRadius(8)
+                    Text("Off by default. Enable before recording to make Follow mouse and Focus clicks available in the editor.").font(.caption2).foregroundColor(.secondary)
                     Toggle("Copy recording to clipboard",isOn:$store.copyRecordingToClipboard)
                     Text("After stopping, paste the video into apps that accept file attachments. The original stays in Movies/FrameForge.").font(.caption2).foregroundColor(.secondary)
                 }
             }.disabled(store.busy || store.recording)
-            if store.microphoneID != "off" {
+            if store.resolvedMicrophoneID != nil {
                 VStack(alignment:.leading,spacing:6) {
                     Text("Mic input · \(Int(store.microphoneGain*100))%") .font(.caption)
                     Slider(value:Binding(get:{ store.microphoneGain },set:{ store.setMicrophoneGain($0) }),in:0...1)

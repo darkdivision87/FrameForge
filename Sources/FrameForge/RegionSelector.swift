@@ -3,12 +3,12 @@ import AppKit
 @MainActor final class RegionSelector {
     private var window: SelectionWindow?
     private var completion: ((CGRect?) -> Void)?
-    private weak var previousWindow: NSWindow?
+    private let visibility = CaptureWindowVisibility()
     func select(displayID: UInt32) async throws -> CGRect? {
         guard window == nil else { throw ForgeError.message("A region selection is already open.") }
         guard let screen = NSScreen.screens.first(where: { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID }) else { throw ForgeError.message("Display disconnected. Refresh sources and select it again.") }
         return await withCheckedContinuation { continuation in
-            previousWindow = NSApp.keyWindow
+            visibility.hide()
             let overlay = SelectionWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
             overlay.setFrame(screen.frame, display: true)
             overlay.title = "Select Recording Region"
@@ -31,7 +31,7 @@ import AppKit
         guard let done = completion else { return }
         completion = nil
         window?.orderOut(nil); window?.close(); window = nil
-        previousWindow?.makeKeyAndOrderFront(nil)
+        visibility.restore()
         done(rect)
     }
 }

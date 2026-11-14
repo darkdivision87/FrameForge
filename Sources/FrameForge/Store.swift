@@ -19,7 +19,14 @@ import UniformTypeIdentifiers
     @Published var audioApplicationID: Int32 = 0
     @Published var audioApplications: [AudioApplication] = []
     @Published var microphones: [MicrophoneDevice] = []
-    @Published var microphoneID = "off"
+    @Published var microphoneID = UserDefaults.standard.string(forKey:"microphoneSelection") ?? "auto" {
+        didSet { UserDefaults.standard.set(microphoneID,forKey:"microphoneSelection") }
+    }
+    private var preferredUSBMicrophone = UserDefaults.standard.string(forKey:"preferredUSBMicrophone")
+    private var deviceObservers: [NSObjectProtocol] = []
+    private let recordingVisibility = CaptureWindowVisibility()
+    @Published var rangeIn: Double?
+    @Published var rangeOut: Double?
     @Published var region: CGRect?
     @Published var regionMode = false
     @Published var maximumCaptureDimension = 3840
@@ -29,7 +36,7 @@ import UniformTypeIdentifiers
     private var recordingBegan: Date?
     private var previewObserver: NSKeyValueObservation?
     @Published var showCursor = true
-    @Published var trackMouse = true
+    @Published var trackMouse = false
     @Published var microphoneGain = 0.5
     @Published var microphoneLevelDB = -120.0
     @Published var microphoneOverload = false
@@ -52,13 +59,18 @@ import UniformTypeIdentifiers
     private var hotKey: GlobalHotKey?
     init() {
         refreshLocalDevices()
+        for name in [AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
+            deviceObservers.append(NotificationCenter.default.addObserver(forName:name,object:nil,queue:.main) { [weak self] _ in
+                Task { @MainActor in guard let self = self, !self.recording else { return }; self.refreshLocalDevices() }
+            })
+        }
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] time in
             Task { @MainActor in self?.playhead = time.seconds.isFinite ? time.seconds : 0 }
         }
         hotKey = GlobalHotKey { [weak self] in
             Task { @MainActor in
                 guard let self = self, !self.busy else { return }
-                if self.recording { await self.stopRecording() } else { await self.startRecording() }
+                if self.recording { await self.stopRecording() } else { await self.startRecording(selectRegion:true) }
             }
         }
         recorder.onMicrophoneLevel = { [weak self] level in
@@ -72,7 +84,7 @@ import UniformTypeIdentifiers
     var clip: Clip? { project.clips.first { $0.id == selected } }
     var canUndo: Bool { !history.isEmpty }
     var canRedo: Bool { !future.isEmpty }
-    var recordingShortcutHint: String { hotKey?.isRegistered == true ? "start / stop ⌥⇧R" : "stop from the menu bar (global shortcut unavailable)" }
+    var recordingShortcutHint: String { hotKey?.isRegistered == true ? "select region & record / stop ⇧⌘S" : "stop from the menu bar (global shortcut unavailable)" }
     func report(_ error: Error) {
         let nsError = error as NSError
         if nsError.domain == SCStreamErrorDomain && nsError.code == -3801 {
@@ -85,19 +97,48 @@ import UniformTypeIdentifiers
             guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value else { return nil }
             return DisplayOption(id:id,name:screen.localizedName)
         }
-        microphones = Recorder.microphoneDevices().map { MicrophoneDevice(id:$0.uniqueID,name:$0.localizedName) }
+        microphones = Recorder.microphoneOptions()
+        if microphoneID != "auto", microphoneID != "off", microphoneID != "default", !microphones.contains(where: { $0.id == microphoneID }) { microphoneID = "auto" }
         if !displayOptions.contains(where: { $0.id == displayID }) { changeDisplay(displayOptions.first?.id ?? 0) }
+    }
+    deinit { deviceObservers.forEach { NotificationCenter.default.removeObserver($0) } }
+    var resolvedMicrophoneID: String? {
+        if microphoneID == "off" { return nil }
+        if microphoneID == "auto" { return MicrophoneDevice.automaticID(in:microphones,preferred:preferredUSBMicrophone) }
+        return microphoneID
+    }
+    var automaticMicrophoneLabel: String {
+        let id = MicrophoneDevice.automaticID(in:microphones,preferred:preferredUSBMicrophone)
+        return id.flatMap { id in microphones.first { $0.id == id }?.name } ?? "no USB microphone"
+    }
+    var canRemoveRange: Bool {
+        guard let lower = rangeIn, let upper = rangeOut else { return false }
+        return lower.isFinite && upper.isFinite && lower >= 0 && upper > lower && upper <= project.duration
+    }
+    func markIn() { rangeIn = min(project.duration,max(0,playhead)) }
+    func markOut() { rangeOut = min(project.duration,max(0,playhead)) }
+    func clearRange() { rangeIn = nil; rangeOut = nil }
+    func removeRange() {
+        guard canRemoveRange, !busy, !recording, let lower = rangeIn, let upper = rangeOut else { return }
+        do {
+            let edited = try project.removingRange(from:lower,to:upper)
+            player.pause(); playhead = lower
+            mutate { $0 = edited }
+            status = "Removed \(timeLabel(upper-lower)) · gap closed · Undo restores the cut"
+        } catch { report(error) }
     }
     func mutate(_ operation: (inout Project) -> Void) {
         let old = project; operation(&project)
-        if old != project { history.append(old); if history.count > 100 { history.removeFirst() }; future = []; rebuild() }
+        if old != project { clearRange(); history.append(old); if history.count > 100 { history.removeFirst() }; future = []; rebuild() }
     }
     func undo() { guard let value = history.popLast() else { return }; future.append(project); project = value; rebuild() }
     func redo() { guard let value = future.popLast() else { return }; history.append(project); project = value; rebuild() }
     func update(_ changed: Clip) { mutate { p in if let i = p.clips.firstIndex(where: { $0.id == changed.id }) { p.clips[i] = changed } } }
     func rebuild() {
+        clearRange()
+        playhead = min(playhead,project.duration)
         if !project.clips.contains(where: { $0.id == selected }) { selected = project.clips.first?.id }
-        revision += 1; let token = revision; let snapshot = project
+        revision += 1; let token = revision; let snapshot = project; let previewTime = playhead
         previewTask?.cancel(); player.pause()
         if snapshot.clips.isEmpty { player.replaceCurrentItem(with: nil); playhead = 0; return }
         status = "Preparing preview…"
@@ -111,15 +152,22 @@ import UniformTypeIdentifiers
                     let message = observed.error?.localizedDescription ?? "Preview could not load this video."
                     Task { @MainActor [weak self] in self?.error = message }
                 }
-                let time = min(playhead, snapshot.duration)
+                let time = min(previewTime, snapshot.duration)
                 player.replaceCurrentItem(with: item); seek(time); status = "\(snapshot.clips.count) clips · \(timeLabel(snapshot.duration))"
             } catch { if !Task.isCancelled, token == revision { report(error) } }
         }
     }
-    func seek(_ time: Double) { player.seek(to: CMTime(seconds: max(0,time), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
+    func seek(_ time: Double) {
+        playhead = min(project.duration,max(0,time))
+        player.seek(to: CMTime(seconds: playhead, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
     func split() {
-        guard let index = project.clips.firstIndex(where: { $0.id == selected }) else { return }
-        let start = project.clips.prefix(index).reduce(0) { $0+$1.duration }
+        var start = 0.0
+        guard let index = project.clips.indices.first(where: { index in
+            let end = start + project.clips[index].duration
+            if playhead >= start && playhead < end { return true }
+            start = end; return false
+        }) else { return }
         do { let pair = try project.clips[index].split(at: playhead-start); mutate { $0.clips.replaceSubrange(index...index, with: [pair.0,pair.1]) }; selected = pair.1.id } catch { report(error) }
     }
     func remove() { guard let id = selected else { return }; mutate { $0.clips.removeAll { $0.id == id } }; selected = project.clips.first?.id }
@@ -154,12 +202,16 @@ import UniformTypeIdentifiers
         return "\(Int(region.width*size.width)) × \(Int(region.height*size.height)) points"
     }
     func changeDisplay(_ id: UInt32) { if displayID != id { displayID = id; region = nil } }
-    func chooseRegion() async {
-        guard !busy, !recording else { return }
+    @discardableResult func chooseRegion() async -> Bool {
+        guard !busy, !recording else { return false }
         refreshLocalDevices()
-        guard displayID != 0 else { return }
+        guard displayID != 0 else { return false }
         busy = true; defer { busy = false }
-        do { if let selected = try await regionSelector.select(displayID:displayID) { region = selected; regionMode = true; status = "Region selected · \(regionLabel)" } } catch { report(error) }
+        do {
+            guard let selected = try await regionSelector.select(displayID:displayID) else { return false }
+            region = selected; regionMode = true; status = "Region selected · \(regionLabel)"
+            return true
+        } catch { report(error); return false }
     }
     func refreshDisplays() async {
         guard !recording else { return }
@@ -168,16 +220,25 @@ import UniformTypeIdentifiers
             let sources = try await Recorder.sources()
             displays = sources.displays; microphones = sources.microphones; audioApplications = sources.applications
             if !displays.contains(where: { $0.displayID == displayID }) { changeDisplay(displays.first?.displayID ?? 0) }
-            if microphoneID != "off", microphoneID != "default", !microphones.contains(where: { $0.id == microphoneID }) { microphoneID = "off" }
+            if microphoneID != "auto", microphoneID != "off", microphoneID != "default", !microphones.contains(where: { $0.id == microphoneID }) { microphoneID = "off" }
             if audioApplicationID != 0, !audioApplications.contains(where: { $0.id == audioApplicationID }) { audioApplicationID = 0 }
             status = "Recording sources refreshed"
         } catch { report(error) }
     }
-    func startRecording() async {
+    func startRecording(selectRegion: Bool = false) async {
         guard !busy, !recording else { return }
-        if regionMode && region == nil { await chooseRegion(); guard region != nil else { return } }
+        if selectRegion || (regionMode && region == nil) { guard await chooseRegion() else { return } }
+        refreshLocalDevices()
+        let inputID = resolvedMicrophoneID
+        if let inputID = inputID, microphones.contains(where: { $0.id == inputID && $0.isUSB }) {
+            preferredUSBMicrophone = inputID
+            UserDefaults.standard.set(inputID,forKey:"preferredUSBMicrophone")
+        }
         player.pause()
-        busy = true; defer { busy = false }
+        busy = true
+        recordingVisibility.hide()
+        defer { busy = false; if !recording { recordingVisibility.restore() } }
+        await Task.yield()
         do {
             if displays.isEmpty {
                 let sources = try await Recorder.sources(); displays = sources.displays; audioApplications = sources.applications
@@ -186,7 +247,7 @@ import UniformTypeIdentifiers
             let directory = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0].appendingPathComponent("FrameForge")
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let url = directory.appendingPathComponent("Recording-\(UUID().uuidString.prefix(8)).mov")
-            try await recorder.start(display: display, region: regionMode ? region : nil, maximumDimension: maximumCaptureDimension, url: url, fps: captureFPS, systemAudio: systemAudio, audioApplication: audioApplicationID == 0 ? nil : audioApplicationID, microphoneID: microphoneID == "off" ? nil : microphoneID, microphoneGain: microphoneGain, trackMouse: trackMouse, cursor: showCursor)
+            try await recorder.start(display: display, region: regionMode ? region : nil, maximumDimension: maximumCaptureDimension, url: url, fps: captureFPS, systemAudio: systemAudio, audioApplication: audioApplicationID == 0 ? nil : audioApplicationID, microphoneID: inputID, microphoneGain: microphoneGain, trackMouse: trackMouse, cursor: showCursor)
             microphoneLevelDB = -120; microphoneOverload = false
             recordingURL = url; recording = true; status = "Recording · \(recordingShortcutHint)"
             recordingSeconds = 0; recordingBegan = Date()
@@ -199,8 +260,8 @@ import UniformTypeIdentifiers
     func stopRecording() async {
         guard recording else { return }; busy = true; recording = false
         recordingTimer?.invalidate(); recordingTimer = nil; recordingBegan = nil
-        defer { busy = false }
-        do { try await recorder.stop(); if let url = recordingURL { let value = try await MediaEngine.inspect(url); mutate { $0.clips.append(value) }; selected = value.id; status = "Recording saved · \(recorder.summary)"
+        defer { busy = false; recordingVisibility.restore(); refreshLocalDevices() }
+        do { try await recorder.stop(); if let url = recordingURL { let value = try await MediaEngine.inspect(url); playhead = project.duration; mutate { $0.clips.append(value) }; selected = value.id; status = "Recording saved · \(recorder.summary)"
                 if copyRecordingToClipboard {
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()

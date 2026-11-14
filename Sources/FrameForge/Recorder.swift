@@ -2,9 +2,9 @@ import ScreenCaptureKit
 import AVFoundation
 import AppKit
 import VideoToolbox
+import CoreAudio
 
 struct DisplayOption: Identifiable { let id: UInt32; let name: String }
-struct MicrophoneDevice: Identifiable { let id: String; let name: String }
 struct AudioApplication: Identifiable { let id: Int32; let name: String }
 struct CaptureSources { let displays: [SCDisplay]; let microphones: [MicrophoneDevice]; let applications: [AudioApplication] }
 
@@ -49,10 +49,15 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureAudio
     static func microphoneDevices() -> [AVCaptureDevice] {
         AVCaptureDevice.DiscoverySession(deviceTypes:[.builtInMicrophone,.externalUnknown],mediaType:.audio,position:.unspecified).devices
     }
+    static func microphoneOptions() -> [MicrophoneDevice] {
+        microphoneDevices().filter { $0.isConnected && !$0.isSuspended }.map {
+            MicrophoneDevice(id:$0.uniqueID,name:$0.localizedName,isUSB:UInt32(bitPattern:$0.transportType) == kAudioDeviceTransportTypeUSB)
+        }.sorted { $0.id < $1.id }
+    }
     static func sources() async throws -> CaptureSources {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         return CaptureSources(displays:content.displays,
-            microphones:microphoneDevices().map { MicrophoneDevice(id:$0.uniqueID,name:$0.localizedName) },
+            microphones:microphoneOptions(),
             applications:content.applications.filter { $0.processID != ProcessInfo.processInfo.processIdentifier }.map { AudioApplication(id:$0.processID,name:$0.applicationName) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending })
     }
     private func audioInput(name: String, channels: Int) -> AVAssetWriterInput {

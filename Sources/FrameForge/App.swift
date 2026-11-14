@@ -18,7 +18,7 @@ import AVKit
                 Button("Redo", action: { store.redo() }).keyboardShortcut("z", modifiers: [.command,.shift]).disabled(!store.canRedo)
             }
             CommandMenu("Recording") {
-                Button(store.recording ? "Stop Recording" : "Start Recording") { Task { if store.recording { await store.stopRecording() } else { await store.startRecording() } } }.keyboardShortcut("r", modifiers: [.option,.shift]).disabled(store.busy)
+                Button(store.recording ? "Stop Recording" : "Select Region & Record") { Task { if store.recording { await store.stopRecording() } else { await store.startRecording(selectRegion:true) } } }.keyboardShortcut("s", modifiers:[.command,.shift]).disabled(store.busy)
             }
         }
         MenuBarExtra(store.recording ? timeLabel(store.recordingSeconds) : "FrameForge", systemImage:store.recording ? "record.circle.fill" : "record.circle") {
@@ -35,7 +35,7 @@ struct Editor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 16) {
-                Image(systemName: "square.stack.3d.up.fill").foregroundColor(.mint).font(.title2)
+                Image(nsImage: NSApplication.shared.applicationIconImage).resizable().interpolation(.high).frame(width:32,height:32)
                 VStack(alignment: .leading) { Text("FRAMEFORGE").font(.headline); Text("Capture. Cut. Create.").font(.caption).foregroundColor(.secondary) }
                 Spacer()
                 Button(action: { store.importMedia() }) { Label("Import", systemImage: "plus") }.disabled(store.busy)
@@ -53,7 +53,7 @@ struct Editor: View {
                             Text("720p").tag(1280); Text("1080p").tag(1920); Text("4K").tag(3840)
                         }.disabled(store.busy)
                         Picker("Export frame rate", selection: Binding(get: { store.project.fps }, set: { fps in store.mutate { $0.fps = fps } })) { Text("30 fps").tag(30); Text("60 fps").tag(60) }.disabled(store.busy)
-                        Text("DEVELOPMENT BUILD · 0.4").font(.caption2).foregroundColor(.secondary)
+                        Text("DEVELOPMENT BUILD · 0.5").font(.caption2).foregroundColor(.secondary)
                     }.padding(18)
                 }.frame(minWidth: 250, maxWidth: 290)
                 VStack(spacing: 12) {
@@ -68,6 +68,7 @@ struct Editor: View {
                         Slider(value: Binding(get: { min(store.playhead, max(0.01,store.project.duration)) }, set: { store.playhead = $0; store.seek($0) }), in: 0...max(0.01,store.project.duration)).disabled(store.project.clips.isEmpty)
                         Text("\(timeLabel(store.playhead)) / \(timeLabel(store.project.duration))").font(.system(.caption, design: .monospaced))
                     }
+                    RangeEditingPanel()
                     HStack {
                         Text("TIMELINE").font(.caption.bold()).foregroundColor(.secondary)
                         Spacer()
@@ -94,7 +95,7 @@ struct Editor: View {
                             }
                         }.padding(3)
                     }.frame(height: 100)
-                    Text("Clips play left to right. Select a clip to edit; move the playhead inside it to split.").font(.caption).foregroundColor(.secondary)
+                    Text("Scrub to split (⌘B), or mark In / Out and remove a section. Cuts close the gap; ⌘Z restores them.").font(.caption).foregroundColor(.secondary)
                     Spacer(minLength: 0)
                 }.padding(20).frame(minWidth: 540)
                 ScrollView { Inspector() }.frame(minWidth: 230, maxWidth: 270)

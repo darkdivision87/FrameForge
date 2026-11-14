@@ -1,4 +1,6 @@
-# FrameForge 0.4
+# FrameForge 0.5
+
+<img src="Resources/AppIcon.png" alt="FrameForge icon" width="128">
 
 Native macOS 13+ recording and editing app. This development build implements the core workflow and the requested source controls. Full ScreenFlow parity and comparative performance superiority remain unfinished goals.
 
@@ -9,10 +11,10 @@ Open `build/FrameForge.app`. This delivery is Apple Silicon; run `scripts/build.
 1. Choose a named **Display**. Connected monitors and microphone devices are listed even before screen-capture permission is granted.
 2. Select **Entire display** or **Selected region**, then **Select Region…**. Drag on the chosen display and release to accept; Escape cancels. Reselect changes the area. Changing display clears the old region. Coordinates account for monitor placement and Retina scaling.
 3. Set **Capture size** and **Frame rate**. 1080p max and 4K max limit the long edge without upscaling small selections. This avoids asking H.264 to encode oversized desktop modes such as a 6720-pixel display.
-4. Set **Microphone** to Off, System default input, or a particular hardware/virtual input device. USB and other external audio inputs can appear here.
+4. **Auto · USB only** selects a connected USB microphone and remembers the last one used. Plug/unplug updates the list; without a USB input, microphone recording is off. Off and manually selected inputs are remembered. Built-in and system-default inputs require an explicit manual selection.
 5. Enable **Record system / output audio** independently. **All applications** captures computer sound; after **Refresh Sources**, a specific application can be chosen. This selects application audio, not a physical speaker/output device. Microphone and system audio can be enabled together or separately. All-application capture excludes FrameForge's own preview audio.
-6. Click **Start Recording**. macOS may request Screen Recording and Microphone access. Stop with the app button, its menu-bar control, or the global ⌥⇧R shortcut (⌘⇧R remains an alias). The shortcut requires no Accessibility permission; if another app has reserved it, use the menu-bar control instead.
-7. Recordings are saved in `~/Movies/FrameForge`. Successful recordings are appended to the timeline. The editor itself is excluded from display capture.
+6. Click **Start Recording**. macOS may request Screen Recording and Microphone access. The editor hides while recording. Stop with the menu-bar control or global ⇧⌘S shortcut. When idle, ⇧⌘S opens region selection and starts recording after you drag an area; Escape cancels without recording. The shortcut requires no Accessibility permission; if another app has reserved it, use the menu-bar control instead.
+7. Recordings are saved in `~/Movies/FrameForge`. Successful recordings are appended to the timeline. FrameForge returns to the foreground with the newly recorded clip selected and the preview positioned at its beginning. The editor hides during region selection and returns on selection or cancellation.
 
 ### Permissions
 
@@ -26,9 +28,18 @@ Save a `.frameforge` project with ⌘S; open with ⌘O. Project files store edit
 
 Export H.264 or HEVC MP4 at 720p, 1080p or 4K and 30/60 fps. Export audio mixes all source tracks with their individual volume settings. An existing destination is replaced only after encoding succeeds. Export progress and cancellation are available. Quitting during a recording attempts to finish the movie first; errors keep the app open.
 
+## Changes in 0.5
+
+- New custom mint-and-graphite macOS app icon, included in Finder, the Dock, and the editor header.
+
+- **⇧⌘S** selects a region and starts recording, or stops an active recording. FrameForge hides for selection/capture and returns after stopping, including on errors. The menu-bar stop control remains available.
+- Mouse tracking and mouse zoom start **off**. Enable the highlighted tracking toggle before recording, then explicitly select Follow mouse or Focus clicks in Smart Editing. Active zoom is highlighted in mint.
+- **Quick range cuts:** scrub the proportional timeline, set Mark In (⌥I) and Mark Out (⌥O), then Remove Range (⇧⌘X). Drag the orange handles or type exact timeline seconds to refine the cut. Any section, including ranges spanning multiple clips, can be removed; all audio stays with its video and the gap closes automatically. ⌘Z restores the entire operation. ⌘B splits the clip under the playhead.
+- **Auto · USB only** detects connected USB microphones at launch, on device changes, and before recording. It never falls back to the computer microphone. Manual choices and Off are remembered.
+
 ## Changes in 0.4
 
-Press **Option + Shift + R** anywhere while FrameForge is running to start recording with the selected sources; press again to stop. Command + Shift + R remains an alias. If the primary shortcut is unavailable, the app shows a menu-bar fallback hint. The first recording can require macOS permissions; selected-region mode opens the region picker if no region has been chosen.
+Added a global recording toggle (replaced by ⇧⌘S in 0.5).
 
 **Copy recording to clipboard** is enabled by default and remembered across launches. After the movie finishes saving, its file URL is copied using the macOS file pasteboard representation. Paste into apps that accept video/file attachments, or into Finder. Receiving-app support varies; this does not paste playable video into plain text fields. The original movie remains in Movies/FrameForge, and mouse edits still require export to create an edited movie. Failed recordings leave the clipboard unchanged.
 
@@ -57,6 +68,8 @@ Recording now requests NV12 video surfaces, explicitly enables hardware encoding
 - Added readable permission errors and recording finalization when quitting.
 
 ## Verification
+
+0.5: model tests cover middle cuts, cuts across clips, full/head/tail deletion, speed mapping, original preservation, invalid/nonfinite ranges, and USB-only selection with remembered preference. The composition test verifies manual cuts preserve both audio sources and timing. Live USB capture and permission-gated recording still require hardware validation.
 
 Release compilation and local signing pass. Model/geometry tests pass, including Retina scaling, region clipping, minimum region size, trim/split validation, per-source audio validation and old-project decoding. A real synthetic video with two distinct audio tones was imported and played in the running native app. H.264 export produced 1920×1080, 30 fps, 2.0-second video with AAC audio. Spectral checks confirmed both tones and the microphone track's 250 ms initial silent offset.
 

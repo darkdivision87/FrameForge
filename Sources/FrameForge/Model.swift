@@ -53,3 +53,46 @@ func timeLabel(_ seconds: Double) -> String {
     guard seconds.isFinite else { return "00:00.0" }
     return String(format: "%02d:%04.1f", Int(max(0,seconds)) / 60, max(0,seconds).truncatingRemainder(dividingBy: 60))
 }
+
+struct MicrophoneDevice: Identifiable {
+    let id: String
+    let name: String
+    let isUSB: Bool
+    static func automaticID(in devices: [MicrophoneDevice], preferred: String?) -> String? {
+        let usb = devices.filter { $0.isUSB }
+        return usb.first(where: { $0.id == preferred })?.id ?? usb.first?.id
+    }
+}
+
+extension Project {
+    /// Ripple-delete a range in timeline seconds, mapping each piece back to source time.
+    func removingRange(from lower: Double, to upper: Double) throws -> Project {
+        try validated()
+        guard lower.isFinite, upper.isFinite, lower >= 0, upper > lower,
+              upper <= duration else { throw ForgeError.message("Mark an In and Out point inside the timeline.") }
+        var result = self
+        result.clips = []
+        var position = 0.0
+        for clip in clips {
+            let clipEnd = position + clip.duration
+            let cutStart = max(lower, position)
+            let cutEnd = min(upper, clipEnd)
+            if cutStart < cutEnd {
+                if cutStart > position {
+                    var left = clip
+                    left.end = clip.start + (cutStart-position)*clip.speed
+                    result.clips.append(left)
+                }
+                if cutEnd < clipEnd {
+                    var right = clip
+                    if cutStart > position { right.id = UUID() }
+                    right.start = clip.start + (cutEnd-position)*clip.speed
+                    result.clips.append(right)
+                }
+            } else { result.clips.append(clip) }
+            position = clipEnd
+        }
+        try result.validated()
+        return result
+    }
+}
